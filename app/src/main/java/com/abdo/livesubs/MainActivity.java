@@ -87,6 +87,11 @@ public class MainActivity extends Activity {
         micCb.setText("استخدم الميكروفون بدل صوت الجهاز (لو التقاط الصوت مش شغال)");
         micCb.setChecked(prefs.getBoolean("mic", false));
         micCb.setFocusable(true);
+        if (Build.VERSION.SDK_INT < 29) {
+            micCb.setChecked(true);
+            micCb.setEnabled(false);
+            micCb.setText("الميكروفون (التقاط صوت الجهاز محتاج Android 10 أو أحدث)");
+        }
         root.addView(micCb);
 
         LinearLayout row = new LinearLayout(this);
@@ -215,7 +220,7 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (micCb.isChecked()) {
+        if (micCb.isChecked() || Build.VERSION.SDK_INT < 29) {
             launchService(0, null, true);
         } else {
             MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
@@ -254,7 +259,7 @@ public class MainActivity extends Activity {
                 .putExtra(TranslatorService.EXTRA_USE_MIC, mic)
                 .putExtra(TranslatorService.EXTRA_RESULT_CODE, resultCode);
         if (data != null) i.putExtra(TranslatorService.EXTRA_DATA, data);
-        startForegroundService(i);
+        if (Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
         setStatus("✅ الترجمة شغالة. ارجع للقناة.");
         moveTaskToBack(true);
     }

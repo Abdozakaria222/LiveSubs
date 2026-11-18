@@ -6,18 +6,14 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
-import android.media.AudioAttributes;
 import android.media.AudioFormat;
-import android.media.AudioPlaybackCaptureConfiguration;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.media.projection.MediaProjection;
-import android.media.projection.MediaProjectionManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -54,7 +50,7 @@ public class TranslatorService extends Service {
     private volatile boolean active = false;
     private volatile long fallbackUntil = 0;
     private int engine = ENGINE_AUTO;
-    private MediaProjection projection;
+    private Object projection; // MediaProjection on Android 10+
     private AudioRecord recorder;
     private SubtitleOverlay overlay;
     private OfflineEngine offline;
@@ -70,7 +66,7 @@ public class TranslatorService extends Service {
         }
         if (active) return START_NOT_STICKY;
 
-        boolean useMic = intent.getBooleanExtra(EXTRA_USE_MIC, false);
+        boolean useMic = intent.getBooleanExtra(EXTRA_USE_MIC, false) || Build.VERSION.SDK_INT < 29;
         startInForeground(useMic);
 
         SharedPreferences p = getSharedPreferences(MainActivity.PREFS, MODE_PRIVATE);
@@ -136,37 +132,20 @@ public class TranslatorService extends Service {
     }
 
     private AudioRecord buildPlaybackRecorder(Intent intent) {
+        if (Build.VERSION.SDK_INT < 29) throw new IllegalStateException("Android 10+ only");
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             throw new SecurityException("RECORD_AUDIO");
-        int rc = intent.getIntExtra(EXTRA_RESULT_CODE, 0);
-        Intent data = intent.getParcelableExtra(EXTRA_DATA);
-        MediaProjectionManager mpm = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
-        projection = mpm.getMediaProjection(rc, data);
-        if (projection == null) throw new IllegalStateException("no projection");
-        projection.registerCallback(new MediaProjection.Callback() {
-            @Override public void onStop() { stopSelf(); }
-        }, main);
-
-        AudioPlaybackCaptureConfiguration cfg = new AudioPlaybackCaptureConfiguration.Builder(projection)
-                .addMatchingUsage(AudioAttributes.USAGE_MEDIA)
-                .addMatchingUsage(AudioAttributes.USAGE_GAME)
-                .addMatchingUsage(AudioAttributes.USAGE_UNKNOWN)
-                .build();
-        return new AudioRecord.Builder()
-                .setAudioFormat(format())
-                .setBufferSizeInBytes(bufSize())
-                .setAudioPlaybackCaptureConfig(cfg)
-                .build();
+        PlaybackCapture.Result r = PlaybackCapture.create(this, intent.getIntExtra(EXTRA_RESULT_CODE, 0),
+                intent.getParcelableExtra(EXTRA_DATA), format(), bufSize(), main, this::stopSelf);
+        projection = r.projection;
+        return r.recorder;
     }
 
     private AudioRecord buildMicRecorder() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             throw new SecurityException("RECORD_AUDIO");
-        return new AudioRecord.Builder()
-                .setAudioSource(MediaRecorder.AudioSource.MIC)
-                .setAudioFormat(format())
-                .setBufferSizeInBytes(bufSize())
-                .build();
+        return new AudioRecord(MediaRecorder.AudioSource.MIC, SR,
+                AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, bufSize());
     }
 
     // ---------- capture: routes audio to Gemini (as sentence clips) or to Vosk (as a stream) ----------
@@ -326,14 +305,20 @@ public class TranslatorService extends Service {
     }
 
     private void startInForeground(boolean useMic) {
-        NotificationManager nm = getSystemService(NotificationManager.class);
-        nm.createNotificationChannel(new NotificationChannel(CHANNEL, "الترجمة المباشرة", NotificationManager.IMPORTANCE_LOW));
+        Notification.Builder nb;
+        if (Build.VERSION.SDK_INT >= 26) {
+            NotificationManager nm = getSystemService(NotificationManager.class);
+            nm.createNotificationChannel(new NotificationChannel(CHANNEL, "الترجمة المباشرة", NotificationManager.IMPORTANCE_LOW));
+            nb = new Notification.Builder(this, CHANNEL);
+        } else {
+            nb = new Notification.Builder(this);
+        }
         PendingIntent stopPi = PendingIntent.getService(this, 1,
                 new Intent(this, TranslatorService.class).setAction(ACTION_STOP),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         PendingIntent openPi = PendingIntent.getActivity(this, 2,
                 new Intent(this, MainActivity.class), PendingIntent.FLAG_IMMUTABLE);
-        Notification n = new Notification.Builder(this, CHANNEL)
+        Notification n = nb
                 .setSmallIcon(R.drawable.icon)
                 .setContentTitle("مترجم القنوات يعمل")
                 .setContentText("الترجمة الفورية مفعّلة")
@@ -342,7 +327,7 @@ public class TranslatorService extends Service {
                 .setOngoing(true)
                 .build();
 
-        if (!useMic) {
+        if (!useMic && Build.VERSION.SDK_INT >= 29) {
             startForeground(7, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             startForeground(7, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
@@ -363,7 +348,7 @@ public class TranslatorService extends Service {
             recorder.release();
             recorder = null;
         }
-        if (projection != null) { projection.stop(); projection = null; }
+        if (projection != null) { ((MediaProjection) projection).stop(); projection = null; }
         if (overlay != null) { overlay.remove(); overlay = null; }
         super.onDestroy();
     }
