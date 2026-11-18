@@ -1,0 +1,25 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'com.abdo.livesubs'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.abdo.livesubs'
+        minSdk 29
+        targetSdk 34
+        versionCode 1
+        versionName '2.0'
+        ndk { abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86_64' }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    lint { abortOnError false; checkReleaseBuilds false }
+}
+
+dependencies {
+    implementation 'net.java.dev.jna:jna:5.13.0@aar'
+    implementation 'com.alphacephei:vosk-android:0.3.47@aar'
+    implementation 'com.google.mlkit:translate:17.0.3'
+}
