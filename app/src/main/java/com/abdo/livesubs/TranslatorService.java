@@ -90,7 +90,6 @@ public class TranslatorService extends Service {
         }
 
         overlay = new SubtitleOverlay(this, font, margin);
-        if (!overlay.isAttached()) toast("لم يُسمح بالعرض فوق التطبيقات");
         overlay.show("🎧 جاري الاستماع والترجمة…", 3000);
 
         active = true;
@@ -296,12 +295,15 @@ public class TranslatorService extends Service {
     // ---------- UI helpers ----------
 
     private void showSub(String t) {
-        long hold = Math.max(3500, Math.min(9000, t.length() * 120L));
-        main.post(() -> { if (overlay != null) overlay.show(t, hold); });
+        info(t, Math.max(3500, Math.min(9000, t.length() * 120L)));
     }
 
+    /** Shows text on the overlay, or in the floating PiP window if overlays aren't allowed. */
     private void info(String t, long ms) {
-        main.post(() -> { if (overlay != null) overlay.show(t, ms); });
+        main.post(() -> {
+            if (overlay != null && overlay.isAttached()) overlay.show(t, ms);
+            else SubtitleBus.post(t, ms);
+        });
     }
 
     private void startInForeground(boolean useMic) {
@@ -350,6 +352,7 @@ public class TranslatorService extends Service {
         }
         if (projection != null) { ((MediaProjection) projection).stop(); projection = null; }
         if (overlay != null) { overlay.remove(); overlay = null; }
+        SubtitleBus.close();
         super.onDestroy();
     }
 

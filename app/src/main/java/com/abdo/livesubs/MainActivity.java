@@ -111,6 +111,11 @@ public class MainActivity extends Activity {
         row.addView(stop);
         root.addView(row);
 
+        Button ovl = new Button(this);
+        ovl.setText("صلاحية العرض فوق التطبيقات (اختياري: ترجمة بدون نافذة)");
+        ovl.setOnClickListener(v -> openOverlaySettings());
+        root.addView(ovl);
+
         status = new TextView(this);
         status.setTextSize(15);
         status.setTextColor(0xFFFFD54F);
@@ -197,15 +202,9 @@ public class MainActivity extends Activity {
             return;
         }
 
-        if (!Settings.canDrawOverlays(this)) {
+        if (!Settings.canDrawOverlays(this) && Build.VERSION.SDK_INT < 26) {
             setStatus("❗ فعّل صلاحية \"العرض فوق التطبيقات\" ثم ارجع واضغط تشغيل.");
-            try {
-                startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:" + getPackageName())));
-            } catch (ActivityNotFoundException e) {
-                setStatus("الجهاز ماعندوش شاشة صلاحية العرض فوق التطبيقات.\nفعّلها بالأمر:\n"
-                        + "adb shell appops set " + getPackageName() + " SYSTEM_ALERT_WINDOW allow");
-            }
+            openOverlaySettings();
             return;
         }
 
@@ -254,13 +253,28 @@ public class MainActivity extends Activity {
         }
     }
 
+    private void openOverlaySettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:" + getPackageName())));
+        } catch (ActivityNotFoundException e) {
+            setStatus("الجهاز ماعندوش شاشة صلاحية العرض فوق التطبيقات.");
+        }
+    }
+
     private void launchService(int resultCode, Intent data, boolean mic) {
         Intent i = new Intent(this, TranslatorService.class)
                 .putExtra(TranslatorService.EXTRA_USE_MIC, mic)
                 .putExtra(TranslatorService.EXTRA_RESULT_CODE, resultCode);
         if (data != null) i.putExtra(TranslatorService.EXTRA_DATA, data);
         if (Build.VERSION.SDK_INT >= 26) startForegroundService(i); else startService(i);
-        setStatus("✅ الترجمة شغالة. ارجع للقناة.");
-        moveTaskToBack(true);
+        if (Settings.canDrawOverlays(this)) {
+            setStatus("✅ الترجمة شغالة. ارجع للقناة.");
+            moveTaskToBack(true);
+        } else {
+            // no overlay permission: show subtitles in a small floating (PiP) window instead
+            setStatus("✅ الترجمة شغالة في نافذة صغيرة عائمة. ارجع للقناة.");
+            startActivity(new Intent(this, PipActivity.class));
+        }
     }
 }

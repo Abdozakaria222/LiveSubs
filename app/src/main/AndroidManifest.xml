@@ -30,6 +30,14 @@
             </intent-filter>
         </activity>
 
+        <activity android:name=".PipActivity" android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="com.abdo.livesubs.pip"
+            android:excludeFromRecents="true"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation"/>
+
         <service android:name=".TranslatorService" android:exported="false"
             android:foregroundServiceType="mediaProjection|microphone"/>
     </application>
